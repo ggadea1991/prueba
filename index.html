@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Caja Enterprise v26</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    // --- ICONOS ---
+    const Icon = ({d, size=20, className=""}) => (
+       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d={d} /></svg>
+    );
+    const ICONS = {
+       box: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM3.27 6.96 12 12.01l8.73-5.05M12 22.08V12",
+       upload: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12",
+       home: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+       send: "M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z",
+       wallet: "M20 12V8H6a2 2 0 0 1-2 2c0 1.1.9 2 2 2h14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2",
+       logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+       refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10",
+       check: "M20 6 9 17l-5-5",
+       lock: "M12 2a5 5 0 0 0-5 5v4H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2V7a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v4H9V7a3 3 0 0 1 3-3z"
+    };
+
+    const serverCall = (fn, ...args) => new Promise((resolve, reject) => {
+       if(!window.google) {
+          // Mock para local
+          setTimeout(() => {
+             if(fn==='api_getOperators') resolve([{id:'u1', fullName:'Dev User'}]);
+             else if(fn==='api_getActiveSession') resolve({openedAt: new Date(), active:true});
+             else resolve([]);
+          }, 500);
+          return;
+       }
+       google.script.run
+         .withSuccessHandler(resolve)
+         .withFailureHandler(e => { alert(e.message); reject(e); })
+         [fn](...args);
+    });
+
+    const fmt = (n) => new Intl.NumberFormat('es-AR', {style:'currency', currency:'ARS'}).format(n||0);
+    const dateFmt = (d) => new Date(d).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+
+    // --- COMPONENTES ---
+
+    const SapWidget = ({ onFinish }) => {
+       const [status, setStatus] = useState('Subir Excel');
+       const [loading, setLoading] = useState(false);
+
+       const handleFile = (e) => {
+          const f = e.target.files[0];
+          if(!f) return;
+          setLoading(true);
+          setStatus('Leyendo...');
+
+          const reader = new FileReader();
+          reader.onload = async (evt) => {
+             try {
+                const wb = XLSX.read(evt.target.result, {type:'binary'});
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                // header:1 devuelve array de arrays [row1, row2...]
+                const data = XLSX.utils.sheet_to_json(ws, {header:1});
+
+                setStatus('Enviando...');
+                const count = await serverCall('api_importSapData', data);
+                setStatus(`✅ ${count} Procesados`);
+                if(onFinish) onFinish();
+             } catch(err) {
+                setStatus('❌ Error');
+                alert("Error procesando archivo: " + err.message);
+             } finally {
+                setLoading(false);
+             }
+          };
+          reader.readAsBinaryString(f);
+       };
+
+       return (
+          <div className="relative border-2 border-dashed border-blue-200 bg-blue-50 rounded-xl p-6 text-center hover:bg-blue-100 transition-colors cursor-pointer group">
+             <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"/>
+             <div className="text-blue-500 mb-2"><Icon d={ICONS.upload} size={28}/></div>
+             <p className="font-bold text-blue-700 text-sm">{loading ? 'Procesando...' : status}</p>
+             <p className="text-xs text-blue-400 mt-1 hidden group-hover:block">Click o arrastra archivo</p>
+          </div>
+       );
+    };
+
+    const RecentActivity = ({ transfers, manuals, user }) => {
+       // Mezclamos y ordenamos por fecha
+       const all = useMemo(() => {
+          const t = transfers.map(x => ({ ...x, _cat: 'TRANSFER', _date: new Date(x.createdAt) }));
+          const m = manuals.map(x => ({ ...x, _cat: 'MANUAL', _date: new Date(x.date) }));
+          return [...t, ...m].sort((a,b) => b._date - a._date).slice(0, 15);
+       }, [transfers, manuals]);
+
+       return (
+          <div className="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
+             <div className="p-4 border-b border-slate-100 bg-slate-50 font-bold text-slate-700">Actividad Reciente</div>
+             <div className="max-h-[300px] overflow-y-auto">
+               {all.length === 0 && <div className="p-4 text-center text-slate-400 text-sm">Sin movimientos recientes.</div>}
+               {all.map((item, i) => {
+                  const isTrans = item._cat === 'TRANSFER';
+                  const isReceived = isTrans && String(item.toUser) === String(user.id);
+                  const color = item.amount < 0 ? 'text-red-600' : 'text-green-600';
+
+                  return (
+                    <div key={i} className="p-3 border-b border-slate-50 flex justify-between items-center text-sm hover:bg-slate-50">
+                       <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${isTrans ? 'bg-indigo-50 text-indigo-500' : 'bg-amber-50 text-amber-500'}`}>
+                             <Icon d={isTrans ? ICONS.send : ICONS.wallet} size={16}/>
+                          </div>
+                          <div>
+                             <div className="font-bold text-slate-700">
+                                {isTrans ? (isReceived ? `Recibido de ${item.fromUser}` : `Enviado a ${item.toUser}`) : item.type}
+                             </div>
+                             <div className="text-xs text-slate-400">{dateFmt(item._date)} {item.obs ? `• ${item.obs}` : ''}</div>
+                          </div>
+                       </div>
+                       <div className={`font-bold ${color}`}>{fmt(item.amount)}</div>
+                    </div>
+                  );
+               })}
+             </div>
+          </div>
+       );
+    };
+
+    const Dashboard = ({ user, session, refresh }) => {
+       const [data, setData] = useState({ total:0, breakdown:{}, pendingSap:[], pendingTrans:[], historyTrans:[], historyManual:[] });
+       const [loading, setLoading] = useState(false);
+
+       const load = async () => {
+          if(!session) return;
+          setLoading(true);
+          try {
+             const [bal, sap, trans, manuals] = await Promise.all([
+                serverCall('api_calculateBalance', user.id, session.openedAt),
+                serverCall('api_getSapMovements'),
+                serverCall('api_getTransfers'),
+                serverCall('api_getManualEntries', user.id)
+             ]);
+
+             // Filtros
+             const myPendingSap = sap.filter(s => s.originalUser === 'IPROSAP' && s.status === 'PENDING');
+             const myPendingTrans = trans.filter(t => String(t.toUser) === String(user.id) && t.status === 'PENDIENTE');
+
+             setData({
+                total: bal.total,
+                breakdown: bal.breakdown,
+                pendingSap: myPendingSap,
+                pendingTrans: myPendingTrans,
+                historyTrans: trans,
+                historyManual: manuals
+             });
+          } catch(e) { console.error(e); }
+          finally { setLoading(false); }
+       };
+
+       useEffect(() => { load(); }, [user, session]);
+
+       if(!session) return (
+          <div className="h-full flex flex-col items-center justify-center space-y-4 fade-in">
+             <div className="p-6 bg-white rounded-2xl shadow-xl text-center">
+                <h2 className="text-xl font-bold mb-2">Caja Cerrada</h2>
+                <button onClick={async ()=>{ await serverCall('api_openSession', user.id); refresh(); }} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">ABRIR TURNO</button>
+             </div>
+          </div>
+       );
+
+       return (
+          <div className="space-y-6 pb-20">
+             {/* Header Balance */}
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-2 bg-slate-900 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden flex justify-between items-center">
+                   <div className="relative z-10">
+                      <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Saldo Caja</p>
+                      <h1 className="text-5xl font-bold">{fmt(data.total)}</h1>
+                      <div className="flex gap-3 mt-4 text-xs font-bold opacity-80">
+                         <span className="bg-white/10 px-2 py-1 rounded">SAP: {fmt(data.breakdown.sap)}</span>
+                         <span className="bg-white/10 px-2 py-1 rounded">Vales: {fmt((data.breakdown.manualIn||0)-(data.breakdown.manualOut||0))}</span>
+                      </div>
+                   </div>
+                   <button onClick={load} className={`p-3 bg-white/10 rounded-full hover:bg-white/20 ${loading?'spin':''}`}><Icon d={ICONS.refresh}/></button>
+                </div>
+
+                {/* Importador Rápido */}
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col justify-center">
+                   <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Icon d={ICONS.upload} size={18}/> Carga Rápida SAP</h3>
+                   <SapWidget onFinish={load} />
+                </div>
+             </div>
+
+             {/* Pendientes */}
+             {(data.pendingTrans.length > 0 || data.pendingSap.length > 0) && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                   <h3 className="font-bold text-amber-800 mb-3 flex items-center gap-2"><Icon d={ICONS.check}/> Acciones Pendientes</h3>
+                   <div className="flex flex-wrap gap-3">
+                      {data.pendingTrans.map(t => (
+                         <div key={t.id} className="bg-white p-3 rounded-lg shadow-sm flex items-center gap-3 border border-amber-100">
+                            <span className="text-sm font-bold text-slate-700">Recibir {fmt(t.amount)} de {t.fromUser}</span>
+                            <button onClick={async ()=>{ await serverCall('api_acceptTransfer', t.id, user.id); load(); }} className="bg-green-500 text-white text-xs px-2 py-1 rounded font-bold">Aceptar</button>
+                         </div>
+                      ))}
+                      {data.pendingSap.map(s => (
+                         <div key={s.id} className="bg-white p-3 rounded-lg shadow-sm flex items-center gap-3 border border-blue-100">
+                            <span className="text-sm font-bold text-slate-700">SAP {fmt(s.amount)}</span>
+                            <button onClick={async ()=>{ await serverCall('api_claimMovement', s.id, user.id); load(); }} className="bg-blue-500 text-white text-xs px-2 py-1 rounded font-bold">Reclamar</button>
+                         </div>
+                      ))}
+                   </div>
+                </div>
+             )}
+
+             {/* Actividad e Historia */}
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <RecentActivity transfers={data.historyTrans} manuals={data.historyManual} user={user} />
+
+                <div className="bg-white rounded-xl shadow border border-slate-200 p-6 flex flex-col justify-center items-center text-center">
+                   <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-4"><Icon d={ICONS.lock} size={32}/></div>
+                   <h3 className="font-bold text-slate-800 text-lg">Cierre de Turno</h3>
+                   <p className="text-slate-400 text-sm mb-6 px-8">Verifica que tu saldo físico coincida con ${fmt(data.total)}.</p>
+                   <button onClick={async ()=>{
+                      if(confirm(`Saldo Final: ${fmt(data.total)}\n¿Confirmar cierre?`)) {
+                         await serverCall('api_closeSession', user.id, data.total);
+                         refresh();
+                      }
+                   }} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800">EJECUTAR ARQUEO</button>
+                </div>
+             </div>
+          </div>
+       );
+    };
+
+    const ManualForm = ({ user }) => {
+       const [form, setForm] = useState({amount:'', obs:'', type:'VALE'});
+       const send = async (e) => {
+          e.preventDefault();
+          if(!form.amount) return;
+          await serverCall('api_addManualEntry', {...form, operatorId:user.id});
+          alert("Guardado");
+          setForm({amount:'', obs:'', type:'VALE'});
+       };
+       return (
+          <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow border border-slate-200">
+             <h2 className="font-bold text-lg mb-4">Registrar Movimiento Manual</h2>
+             <form onSubmit={send} className="space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                   <button type="button" onClick={()=>setForm({...form, type:'VALE'})} className={`p-3 font-bold rounded-lg border ${form.type==='VALE'?'bg-red-50 border-red-500 text-red-600':'border-slate-200 text-slate-400'}`}>VALE (-)</button>
+                   <button type="button" onClick={()=>setForm({...form, type:'INGRESO'})} className={`p-3 font-bold rounded-lg border ${form.type==='INGRESO'?'bg-green-50 border-green-500 text-green-600':'border-slate-200 text-slate-400'}`}>INGRESO (+)</button>
+                </div>
+                <input type="number" placeholder="Monto" className="w-full p-3 bg-slate-50 rounded-lg border border-slate-200" value={form.amount} onChange={e=>setForm({...form, amount:e.target.value})}/>
+                <textarea placeholder="Motivo / Observación" className="w-full p-3 bg-slate-50 rounded-lg border border-slate-200" value={form.obs} onChange={e=>setForm({...form, obs:e.target.value})}/>
+                <button className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold">GUARDAR</button>
+             </form>
+          </div>
+       );
+    };
+
+    // Componente Transferencias (Simplificado)
+    const TransferForm = ({ user, ops }) => {
+        const [to, setTo] = useState('');
+        const [amount, setAmount] = useState('');
+        const send = async (e) => {
+            e.preventDefault();
+            await serverCall('api_createTransfer', {fromUser:user.id, toUser:to, amount:amount, type:'Reparto'});
+            alert("Enviado");
+            setAmount('');
+        };
+        return (
+            <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow border border-slate-200">
+                <h2 className="font-bold text-lg mb-4">Nueva Transferencia</h2>
+                <form onSubmit={send} className="space-y-4">
+                    <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg" onChange={e=>setTo(e.target.value)}>
+                        <option value="">Seleccionar Destino...</option>
+                        {ops.filter(o=>o.id!==user.id).map(o=><option key={o.id} value={o.id}>{o.fullName}</option>)}
+                    </select>
+                    <input type="number" placeholder="Monto" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg" value={amount} onChange={e=>setAmount(e.target.value)}/>
+                    <button className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold">ENVIAR</button>
+                </form>
+            </div>
+        );
+    };
+
+    const App = () => {
+       const [user, setUser] = useState(null);
+       const [session, setSession] = useState(null);
+       const [ops, setOps] = useState([]);
+       const [view, setView] = useState('dashboard');
+
+       useEffect(() => { serverCall('api_getOperators').then(setOps); }, []);
+       const refresh = () => { if(user) serverCall('api_getActiveSession', user.id).then(setSession); };
+       useEffect(() => { refresh(); }, [user]);
+
+       if(!user) return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+             <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm">
+                <div className="text-center mb-6">
+                   <div className="inline-block p-4 bg-blue-50 text-blue-600 rounded-2xl mb-2"><Icon d={ICONS.box} size={32}/></div>
+                   <h1 className="text-2xl font-bold text-slate-800">Caja v26</h1>
+                </div>
+                <div className="space-y-2">
+                   {ops.map(o => (
+                      <button key={o.id} onClick={()=>setUser(o)} className="w-full p-4 border rounded-xl hover:border-blue-500 hover:bg-blue-50 text-left font-bold text-slate-700 transition-all flex justify-between group">
+                         {o.fullName} <span className="text-blue-500 opacity-0 group-hover:opacity-100">→</span>
+                      </button>
+                   ))}
+                </div>
+             </div>
+          </div>
+       );
+
+       return (
+          <div className="flex h-screen bg-slate-100 overflow-hidden">
+             <aside className="w-64 bg-slate-900 text-white flex flex-col p-6 hidden md:flex">
+                <div className="mb-8 font-bold text-xl flex items-center gap-3"><Icon d={ICONS.box}/> Tesorería</div>
+                <nav className="space-y-2 flex-1">
+                   {[
+                      {id:'dashboard', l:'Panel', i:ICONS.home},
+                      {id:'manual', l:'Manuales', i:ICONS.wallet},
+                      {id:'transfers', l:'Transferir', i:ICONS.send}
+                   ].map(m => (
+                      <button key={m.id} onClick={()=>setView(m.id)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${view===m.id?'bg-blue-600 shadow-lg shadow-blue-900/50':'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+                         <Icon d={m.i}/> {m.l}
+                      </button>
+                   ))}
+                </nav>
+                <button onClick={()=>setUser(null)} className="flex items-center gap-3 text-slate-400 hover:text-white"><Icon d={ICONS.logout}/> Salir</button>
+             </aside>
+
+             <main className="flex-1 overflow-y-auto p-4 md:p-8">
+                <div className="md:hidden flex justify-between items-center mb-6">
+                   <span className="font-bold text-slate-700">Caja v26</span>
+                   <button onClick={()=>setUser(null)}><Icon d={ICONS.logout} className="text-slate-400"/></button>
+                </div>
+
+                {view === 'dashboard' && <Dashboard user={user} session={session} refresh={refresh}/>}
+                {view === 'manual' && <ManualForm user={user}/>}
+                {view === 'transfers' && <TransferForm user={user} ops={ops}/>}
+             </main>
+          </div>
+       );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
