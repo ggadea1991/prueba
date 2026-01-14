@@ -16,7 +16,7 @@ const COLS_TRANS = {
 };
 
 function api_getTransfers() {
-  const ss = SpreadsheetApp.openById(DB_ID);
+  const ss = getDb();
   const sheet = ss.getSheetByName(SHEETS.TRANSFERENCIAS);
   if (!sheet) return [];
 
@@ -60,7 +60,7 @@ function api_createTransfer(obj) {
 
   try {
     lock.waitLock(10000);
-    const ss = SpreadsheetApp.openById(DB_ID);
+    const ss = getDb();
     const sheet = ss.getSheetByName(SHEETS.TRANSFERENCIAS);
 
     // Mapeo dinámico por si cambian de orden, pero usando nombres exactos
@@ -102,7 +102,7 @@ function api_acceptTransfer(id, operatorId) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(5000);
-    const ss = SpreadsheetApp.openById(DB_ID);
+    const ss = getDb();
     const sheet = ss.getSheetByName(SHEETS.TRANSFERENCIAS);
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim());
